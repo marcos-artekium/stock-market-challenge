@@ -1,0 +1,12 @@
+{
+    "python.pythonPath": "/home/marcos/.local/share/virtualenvs/smart-quote-1UlpDPTX/bin/python",
+    "python.formatting.provider": "black",
+    "editor.formatOnSave": true,
+    "python.formatting.blackArgs": [
+        "--line-length=100"
+    ],
+    "python.linting.mypyEnabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.linting.pylintUseMinimalCheckers": false
+}
