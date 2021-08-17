@@ -6,11 +6,14 @@ name = "pypi"
 [packages]
 fastapi = "*"
 uvicorn = "*"
+pydantic = { extras = ['email'] }
 requests = "*"
 python-multipart = "*"
 python-jose = { extras = ['cryptography'] }
 passlib = { extras = ['bcrypt'] }
-sqlalchemy= "*"
+sqlalchemy = "*"
+sqlalchemy-utils = "*"
+loguru = "*"
 
 [dev-packages]
 mypy = "*"
