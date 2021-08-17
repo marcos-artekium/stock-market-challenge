@@ -41,6 +41,6 @@ listo- Json structure is up to you.
 - It will be a big plus if you deploy the services somewhere in the cloud (heroku, gcloud, aws, azure, etc). It's ok if you just do it locally.
 listo- Use github (or other git repo).
 listo- Programming language: Python.
-- BONUS: If you can implement API throttling, that's a big one. Throttling rules are up to you (1 API call per second allowed or 10 API calls per minute, etc).
+listo- BONUS: If you can implement API throttling, that's a big one. Throttling rules are up to you (1 API call per second allowed or 10 API calls per minute, etc).
 listo- Log every API call received, log format is up to you.
 - Place a README.md file with instructions in the github repo so test can be performed and checked.

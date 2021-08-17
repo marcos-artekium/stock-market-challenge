@@ -1,10 +1,13 @@
 """Stock Market Challenge api
 
 """
+from collections import deque
 from datetime import datetime, timedelta
+from functools import lru_cache, wraps
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -14,10 +17,16 @@ from database.models import RegisteredUser
 from database.helpers import session_scope
 from rest.models import UserInDB, Token, TokenData
 
-
+# Token constants
 SECRET_KEY = "42bb1604cbbd11e94a0c3bc18e452592ab5ed4fe53da5e72b380dbc7b9c515b0"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# Throttling constants
+MAX_LEN = 5
+SECONDS = 30
+deq = deque(maxlen=MAX_LEN)  # type: deque
+
 
 app = FastAPI(title="Stock Market Challenge", version="0.0.1")
 
@@ -25,7 +34,39 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Throttling expeption and decorator
+class RateLimitException(Exception):
+    pass
 
+
+@app.exception_handler(RateLimitException)
+async def rate_limit_exception_handler(*args, **kwargs):
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={
+            "error msg": f"Rate-limit reached. The API call frequency is {MAX_LEN} per {SECONDS} seconds."
+        },
+    )
+
+
+def rate_limit(maxlen, seconds):
+    def inner(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            global deq
+            current_time = datetime.now()
+            if len(deq) != 0:
+                if len(deq) == maxlen and (current_time - deq[0]).seconds < seconds:
+                    raise RateLimitException()
+            deq.append(current_time)
+            return await func(*args, **kwargs)
+
+        return wrapper
+
+    return inner
+
+
+# Authentication method
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -140,7 +181,19 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+@lru_cache
+def call_alphavantage(symbol: str):
+    """Call the alpha vantage api with lru_cache to avoid exhausting the allowed api calls"""
+    url = (
+        f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}"
+        + "&outputsize=compact&apikey=X86NOH6II01P7R24"
+    )
+
+    return requests.get(url)
+
+
 @app.get("/stock-info/")
+@rate_limit(maxlen=MAX_LEN, seconds=SECONDS)
 async def get_stock_information(symbol: str, token: str = Depends(oauth2_scheme)):
     """Call Alpha Vantage API to retrieve stock information from the stock symbol
     passed as a header request.
@@ -150,28 +203,36 @@ async def get_stock_information(symbol: str, token: str = Depends(oauth2_scheme)
     last two closing price values."""
     await check_credentials(token)
 
-    url = (
-        f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}"
-        + "&outputsize=compact&apikey=X86NOH6II01P7R24"
-    )
+    response = call_alphavantage(symbol)
 
-    response = requests.get(url)
+    try:
+        daily_stock_info = response.json()["Time Series (Daily)"]
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Oops, something went wrong, try again.",
+        )
+    else:
+        current_day, last_day, *_ = sorted(daily_stock_info, reverse=True)
 
-    daily_stock_info = response.json()["Time Series (Daily)"]
-    current_day, last_day, *_ = sorted(daily_stock_info, reverse=True)
+        needed_info = {
+            "open_price": daily_stock_info[current_day]["1. open"],
+            "higher_price": daily_stock_info[current_day]["2. high"],
+            "lower_price": daily_stock_info[current_day]["3. low"],
+            "variation_last_two_closing_price": round(
+                float(daily_stock_info[current_day]["4. close"])
+                - float(daily_stock_info[last_day]["4. close"]),
+                4,
+            ),
+        }
 
-    needed_info = {
-        "open_price": daily_stock_info[current_day]["1. open"],
-        "higher_price": daily_stock_info[current_day]["2. high"],
-        "lower_price": daily_stock_info[current_day]["3. low"],
-        "variation_last_two_closing_price": round(
-            float(daily_stock_info[current_day]["4. close"])
-            - float(daily_stock_info[last_day]["4. close"]),
-            4,
-        ),
-    }
+        return {symbol: needed_info}
 
-    return {symbol: needed_info}
+
+@app.get("/test-rl")
+@rate_limit(maxlen=MAX_LEN, seconds=SECONDS)
+async def test_ri():
+    return {"msg": "endpoint called"}
 
 
 if __name__ == "__main__":
