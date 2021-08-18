@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "/home/marcos/.local/share/virtualenvs/smart-quote-1UlpDPTX/bin/python",
+    "python.pythonPath": "/home/marcos/.virtualenvs/stock-market-challenge-XGpw9VBX/bin/python",
     "python.formatting.provider": "black",
     "editor.formatOnSave": true,
     "python.formatting.blackArgs": [

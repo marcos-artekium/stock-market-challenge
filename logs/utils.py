@@ -43,4 +43,3 @@ def setup_logging():
 
     # configure loguru
     logger.configure(handlers=[{"sink": sys.stdout, "serialize": JSON_LOGS}])
-    logger.add("logs/api_logs.log", level="INFO")

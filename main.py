@@ -1,5 +1,4 @@
-"""Stock Market Challenge api
-
+"""Stock Market Challenge API
 """
 from collections import deque
 from datetime import datetime, timedelta
@@ -22,7 +21,7 @@ SECRET_KEY = "42bb1604cbbd11e94a0c3bc18e452592ab5ed4fe53da5e72b380dbc7b9c515b0"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Throttling constants
+# Throttling constants. The API can be called up to MAX_LEN times in SECONDS seconds
 MAX_LEN = 5
 SECONDS = 30
 deq = deque(maxlen=MAX_LEN)  # type: deque
@@ -66,7 +65,7 @@ def rate_limit(maxlen, seconds):
     return inner
 
 
-# Authentication method
+# Authentication methods
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -125,6 +124,25 @@ async def check_credentials(token: str = Depends(oauth2_scheme)):
             raise credentials_exception
 
 
+# pylint: disable=unused-argument
+@lru_cache
+def call_alphavantage(symbol: str, date_time: tuple):
+    """Call the alpha vantage api with cache to avoid exhausting the allowed api calls.
+    Date_time argument is used to update the information retrieved from alpha vantage
+    up to twice a day"""
+    url = (
+        f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}"
+        + "&outputsize=compact&apikey=X86NOH6II01P7R24"
+    )
+
+    return requests.get(url)
+
+
+@app.get("/")
+async def root():
+    return {"msg": "stock market challenge"}
+
+
 @app.post("/sign-up", status_code=status.HTTP_201_CREATED)
 async def sign_up(user_to_register: UserInDB):
     """Endpoint to register a new user. Both username and email address must be unique"""
@@ -181,17 +199,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@lru_cache
-def call_alphavantage(symbol: str):
-    """Call the alpha vantage api with lru_cache to avoid exhausting the allowed api calls"""
-    url = (
-        f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}"
-        + "&outputsize=compact&apikey=X86NOH6II01P7R24"
-    )
-
-    return requests.get(url)
-
-
 @app.get("/stock-info/")
 @rate_limit(maxlen=MAX_LEN, seconds=SECONDS)
 async def get_stock_information(symbol: str, token: str = Depends(oauth2_scheme)):
@@ -203,7 +210,10 @@ async def get_stock_information(symbol: str, token: str = Depends(oauth2_scheme)
     last two closing price values."""
     await check_credentials(token)
 
-    response = call_alphavantage(symbol)
+    # Pass datetime info to call_alphavantage to update cache
+    now = datetime.now()
+    date_time = (now.year, now.month, now.day, "AM" if now.hour < 12 else "PM")
+    response = call_alphavantage(symbol, date_time)
 
     try:
         daily_stock_info = response.json()["Time Series (Daily)"]
@@ -229,21 +239,26 @@ async def get_stock_information(symbol: str, token: str = Depends(oauth2_scheme)
         return {symbol: needed_info}
 
 
-@app.get("/test-rl")
-@rate_limit(maxlen=MAX_LEN, seconds=SECONDS)
-async def test_ri():
-    return {"msg": "endpoint called"}
-
-
 if __name__ == "__main__":
+    import os
+
     from uvicorn import Config, Server
-    from logs.utils import setup_logging, LOG_LEVEL
+
+    import logs.utils
+
+    ON_HEROKU = os.environ.get("ON_HEROKU")
+
+    if ON_HEROKU:
+        # get the heroku port
+        port = int(os.environ.get("PORT", 17995))
+    else:
+        port = 8000
 
     server = Server(
-        Config("main:app", host="0.0.0.0", log_level=LOG_LEVEL, reload=True),
+        Config("main:app", host="0.0.0.0", port=port, log_level=logs.utils.LOG_LEVEL),
     )
 
     # setup logging last, to make sure no library overwrites it
-    setup_logging()
+    logs.utils.setup_logging()
 
     server.run()
